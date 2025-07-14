@@ -1535,6 +1535,11 @@ class dbBlock : public dbObject
   void setMaxLayerForClock(int max_layer_for_clock);
 
   ///
+  /// Get the gcell tile size
+  ///
+  int getGCellTileSize();
+
+  ///
   /// Get the extraction corner names
   ///
   void getExtCornerNames(std::list<std::string>& ecl);
@@ -7704,7 +7709,7 @@ class dbIsolation : public dbObject
 
   void setLocation(const std::string& location);
 
-  void addIsolationCell(std::string& master);
+  void addIsolationCell(const std::string& master);
 
   std::vector<dbMaster*> getIsolationCells();
 
@@ -8419,6 +8424,7 @@ class dbScanInst : public dbObject
 
   void setClockEdge(ClockEdge clock_edge);
   ClockEdge getClockEdge() const;
+  std::string getClockEdgeString() const;
 
   // The number of bits that are in this scan inst from the scan in to the scan
   // out. For simple flops this is just 1.

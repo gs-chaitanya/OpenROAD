@@ -38,11 +38,11 @@ namespace gui {
 class Gui;
 }
 
+namespace grt {
+
 using boost::multi_array;
 using boost::icl::interval;
 using boost::icl::interval_set;
-
-namespace grt {
 
 class AbstractFastRouteRenderer;
 class MakeWireParasitics;
@@ -50,15 +50,15 @@ class MakeWireParasitics;
 // Debug mode settings
 struct DebugSetting
 {
-  const odb::dbNet* net_ = nullptr;
-  bool steinerTree_ = false;
-  bool rectilinearSTree_ = false;
-  bool tree2D_ = false;
-  bool tree3D_ = false;
-  std::unique_ptr<AbstractFastRouteRenderer> renderer_;
-  std::string sttInputFileName_;
+  const odb::dbNet* net = nullptr;
+  bool steinerTree = false;
+  bool rectilinearSTree = false;
+  bool tree2D = false;
+  bool tree3D = false;
+  std::unique_ptr<AbstractFastRouteRenderer> renderer;
+  std::string sttInputFileName;
 
-  bool isOn() const { return renderer_ != nullptr; }
+  bool isOn() const { return renderer != nullptr; }
 };
 
 using stt::Tree;
@@ -101,6 +101,7 @@ class FastRouteCore
   void addLayerDirection(int layer_idx, const odb::dbTechLayerDir& direction);
   FrNet* addNet(odb::dbNet* db_net,
                 bool is_clock,
+                bool is_local,
                 int driver_idx,
                 int cost,
                 int min_layer,
@@ -109,7 +110,7 @@ class FastRouteCore
                 std::vector<int>* edge_cost_per_layer);
   void deleteNet(odb::dbNet* db_net);
   void removeNet(odb::dbNet* db_net);
-  void mergeNet(odb::dbNet* db_net);
+  void mergeNet(odb::dbNet* removed_net, odb::dbNet* preserved_net);
   void clearNetRoute(odb::dbNet* db_net);
   void clearNetsToRoute() { net_ids_.clear(); }
   void initEdges();
@@ -223,7 +224,7 @@ class FastRouteCore
 
   AbstractFastRouteRenderer* fastrouteRender()
   {
-    return debug_->renderer_.get();
+    return debug_->renderer.get();
   }
 
  private:

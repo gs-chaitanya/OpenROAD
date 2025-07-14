@@ -233,6 +233,7 @@ void FastRouteCore::addLayerDirection(int layer_idx,
 
 FrNet* FastRouteCore::addNet(odb::dbNet* db_net,
                              bool is_clock,
+                             bool is_local,
                              int driver_idx,
                              int cost,
                              int min_layer,
@@ -268,7 +269,11 @@ FrNet* FastRouteCore::addNet(odb::dbNet* db_net,
              max_layer,
              slack,
              edge_cost_per_layer);
-  net_ids_.push_back(netID);
+  // Don't add local nets to the list of ids that will be routed. It is only
+  // necessary to add them to make mergeNet work with local nets.
+  if (!is_local) {
+    net_ids_.push_back(netID);
+  }
 
   return net;
 }
@@ -291,13 +296,37 @@ void FastRouteCore::removeNet(odb::dbNet* db_net)
   }
 }
 
-void FastRouteCore::mergeNet(odb::dbNet* db_net)
+void FastRouteCore::mergeNet(odb::dbNet* removed_net, odb::dbNet* preserved_net)
 {
-  if (db_net_id_map_.find(db_net) != db_net_id_map_.end()) {
-    const int net_id = db_net_id_map_[db_net];
-    sttrees_[net_id].nodes.clear();
-    sttrees_[net_id].edges.clear();
-    deleteNet(db_net);
+  if (db_net_id_map_.find(removed_net) != db_net_id_map_.end()) {
+    const int removed_net_id = db_net_id_map_[removed_net];
+    auto& removed_nodes = sttrees_[removed_net_id].nodes;
+    auto& removed_edges = sttrees_[removed_net_id].edges;
+
+    if (db_net_id_map_.find(preserved_net) != db_net_id_map_.end()) {
+      const int preserved_net_id = db_net_id_map_[preserved_net];
+      sttrees_[preserved_net_id].num_terminals
+          += sttrees_[removed_net_id].num_terminals;
+      auto& preserved_nodes = sttrees_[preserved_net_id].nodes;
+      auto& preserved_edges = sttrees_[preserved_net_id].edges;
+
+      preserved_nodes.insert(
+          preserved_nodes.end(), removed_nodes.begin(), removed_nodes.end());
+      preserved_edges.insert(
+          preserved_edges.end(), removed_edges.begin(), removed_edges.end());
+    } else {
+      logger_->error(
+          utl::GRT,
+          13,
+          "Net {} is not present in FastRouteCore structures when trying to "
+          "merge with net {}",
+          preserved_net->getName(),
+          removed_net->getName());
+    }
+
+    removed_nodes.clear();
+    removed_edges.clear();
+    deleteNet(removed_net);
   }
 }
 
@@ -407,12 +436,13 @@ void FastRouteCore::addAdjustment(int x1,
 
     if (cap - reducedCap < 0) {
       if (isReduce) {
-        if (verbose_)
+        if (verbose_) {
           logger_->warn(GRT,
                         113,
                         "Underflow in reduce: cap, reducedCap: {}, {}",
                         cap,
                         reducedCap);
+        }
       }
       reduce = 0;
     } else {
@@ -445,12 +475,13 @@ void FastRouteCore::addAdjustment(int x1,
 
     if (cap - reducedCap < 0) {
       if (isReduce) {
-        if (verbose_)
+        if (verbose_) {
           logger_->warn(GRT,
                         114,
                         "Underflow in reduce: cap, reducedCap: {}, {}",
                         cap,
                         reducedCap);
+        }
       }
       reduce = 0;
     } else {
@@ -543,8 +574,9 @@ void FastRouteCore::initBlockedIntervals(std::vector<int>& track_space)
         }
       }
       edge_cap -= reduce;
-      if (edge_cap < 0)
+      if (edge_cap < 0) {
         edge_cap = 0;
+      }
       addAdjustment(x, y, x, y + 1, layer, edge_cap, true);
     }
   }
@@ -565,8 +597,9 @@ void FastRouteCore::initBlockedIntervals(std::vector<int>& track_space)
         }
       }
       edge_cap -= reduce;
-      if (edge_cap < 0)
+      if (edge_cap < 0) {
         edge_cap = 0;
+      }
       addAdjustment(x, y, x + 1, y, layer, edge_cap, true);
     }
   }
@@ -848,10 +881,11 @@ void FastRouteCore::updateDbCongestion(int min_routing_layer,
   }
   auto block = db_->getChip()->getBlock();
   auto db_gcell = block->getGCellGrid();
-  if (db_gcell)
+  if (db_gcell) {
     db_gcell->resetGrid();
-  else
+  } else {
     db_gcell = odb::dbGCellGrid::create(block);
+  }
 
   db_gcell->addGridPatternX(x_corner_, x_grid_, tile_size_);
   db_gcell->addGridPatternY(y_corner_, y_grid_, tile_size_);
@@ -1073,9 +1107,9 @@ NetRouteMap FastRouteCore::run()
   }
 
   // debug mode Rectilinear Steiner Tree before overflow iterations
-  if (debug_->isOn() && debug_->rectilinearSTree_) {
+  if (debug_->isOn() && debug_->rectilinearSTree) {
     for (const int& netID : net_ids_) {
-      if (nets_[netID]->getDbNet() == debug_->net_) {
+      if (nets_[netID]->getDbNet() == debug_->net) {
         StTreeVisualization(sttrees_[netID], nets_[netID], false);
       }
     }
@@ -1314,9 +1348,9 @@ NetRouteMap FastRouteCore::run()
   }  // end overflow iterations
 
   // Debug mode Tree 2D after overflow iterations
-  if (debug_->isOn() && debug_->tree2D_) {
+  if (debug_->isOn() && debug_->tree2D) {
     for (const int& netID : net_ids_) {
-      if (nets_[netID]->getDbNet() == debug_->net_) {
+      if (nets_[netID]->getDbNet() == debug_->net) {
         StTreeVisualization(sttrees_[netID], nets_[netID], false);
       }
     }
@@ -1336,12 +1370,13 @@ NetRouteMap FastRouteCore::run()
   }
 
   if (overflow_increases > max_overflow_increases) {
-    if (verbose_)
+    if (verbose_) {
       logger_->warn(
           GRT,
           230,
           "Congestion iterations cannot increase overflow, reached the "
           "maximum number of times the total overflow can be increased.");
+    }
   }
 
   freeRR();
@@ -1372,9 +1407,9 @@ NetRouteMap FastRouteCore::run()
   }
 
   // Debug mode Tree 3D after layer assignament
-  if (debug_->isOn() && debug_->tree3D_) {
+  if (debug_->isOn() && debug_->tree3D) {
     for (const int& netID : net_ids_) {
-      if (nets_[netID]->getDbNet() == debug_->net_) {
+      if (nets_[netID]->getDbNet() == debug_->net) {
         StTreeVisualization(sttrees_[netID], nets_[netID], true);
       }
     }
@@ -1512,43 +1547,43 @@ const char* FrNet::getName() const
 void FastRouteCore::setDebugOn(
     std::unique_ptr<AbstractFastRouteRenderer> renderer)
 {
-  debug_->renderer_ = std::move(renderer);
+  debug_->renderer = std::move(renderer);
 }
 void FastRouteCore::setDebugSteinerTree(bool steinerTree)
 {
-  debug_->steinerTree_ = steinerTree;
+  debug_->steinerTree = steinerTree;
 }
 void FastRouteCore::setDebugTree2D(bool tree2D)
 {
-  debug_->tree2D_ = tree2D;
+  debug_->tree2D = tree2D;
 }
 void FastRouteCore::setDebugTree3D(bool tree3D)
 {
-  debug_->tree3D_ = tree3D;
+  debug_->tree3D = tree3D;
 }
 void FastRouteCore::setDebugNet(const odb::dbNet* net)
 {
-  debug_->net_ = net;
+  debug_->net = net;
 }
 void FastRouteCore::setDebugRectilinearSTree(bool rectiliniarSTree)
 {
-  debug_->rectilinearSTree_ = rectiliniarSTree;
+  debug_->rectilinearSTree = rectiliniarSTree;
 }
 void FastRouteCore::setSttInputFilename(const char* file_name)
 {
-  debug_->sttInputFileName_ = std::string(file_name);
+  debug_->sttInputFileName = std::string(file_name);
 }
 bool FastRouteCore::hasSaveSttInput()
 {
-  return (debug_->sttInputFileName_ != "");
+  return (debug_->sttInputFileName != "");
 }
 std::string FastRouteCore::getSttInputFileName()
 {
-  return debug_->sttInputFileName_;
+  return debug_->sttInputFileName;
 }
 const odb::dbNet* FastRouteCore::getDebugNet()
 {
-  return debug_->net_;
+  return debug_->net;
 }
 
 void FastRouteCore::steinerTreeVisualization(const stt::Tree& stree, FrNet* net)
@@ -1582,8 +1617,9 @@ void FastRouteCore::StTreeVisualization(const StTree& stree,
 
 int FrNet::getLayerEdgeCost(int layer) const
 {
-  if (edge_cost_per_layer_)
+  if (edge_cost_per_layer_) {
     return (*edge_cost_per_layer_)[layer];
+  }
 
   return 1;
 }

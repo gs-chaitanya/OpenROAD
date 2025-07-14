@@ -947,8 +947,9 @@ bool dbNetwork::isLeaf(const Instance* instance) const
     dbModule* db_module;
     Cell* cur_cell = cell(instance);
     staToDb(cur_cell, db_master, db_module);
-    if (db_module)
+    if (db_module) {
       return false;
+    }
     return true;
   }
   return instance != top_instance_;
@@ -3316,7 +3317,7 @@ dbModule* dbNetwork::findHighestCommonModule(std::vector<dbModule*>& itree1,
 class PinModuleConnection : public PinVisitor
 {
  public:
-  PinModuleConnection(const dbNetwork* nwk, const dbModule* target_module_);
+  PinModuleConnection(const dbNetwork* nwk, const dbModule* target_module);
   void operator()(const Pin* pin) override;
   dbModBTerm* getModBTerm() const { return dest_modbterm_; }
   dbModITerm* getModITerm() const { return dest_moditerm_; }

@@ -779,6 +779,38 @@ proc set_io_pin_constraint { args } {
         set names $keys(-pin_names)
         odb::add_pins_to_top_layer $names $llx $lly $urx $ury
       }
+    } elseif { [regexp {\{([0-9]+\.?[0-9]*),\s*([0-9]+\.?[0-9]*)\}-\{([0-9]+\.?[0-9]*),\s*([0-9]+\.?[0-9]*)\}} $region match x1 y1 x2 y2] } {
+      # Rectangle format: {x1, y1}-{x2, y2}
+      # Convert to DBU
+      set x1_dbu [ord::microns_to_dbu $x1]
+      set y1_dbu [ord::microns_to_dbu $y1]
+      set x2_dbu [ord::microns_to_dbu $x2]
+      set y2_dbu [ord::microns_to_dbu $y2]
+
+      # Validate that coordinates form a line (rectangle with zero width or height)
+      set is_vertical_line [expr { $x1_dbu == $x2_dbu }]
+      set is_horizontal_line [expr { $y1_dbu == $y2_dbu }]
+
+      if { !$is_vertical_line && !$is_horizontal_line } {
+        utl::error PPL 214 "Rectangle region must be a perfect line (either vertical or horizontal).\
+                Got rectangle from ([ord::dbu_to_microns $x1_dbu], [ord::dbu_to_microns $y1_dbu]) to\
+                ([ord::dbu_to_microns $x2_dbu], [ord::dbu_to_microns $y2_dbu])"
+      }
+
+      # For polygon/arbitrary constraints, bypass findConstraintRegion and create Rect directly
+      # This follows the same pattern as add_pins_to_top_layer
+      set constraint_region [odb::Rect]
+      $constraint_region init $x1_dbu $y1_dbu $x2_dbu $y2_dbu
+
+      if { [info exists keys(-direction)] } {
+        set direction $keys(-direction)
+        odb::add_direction_constraint_direct $direction $constraint_region
+      }
+
+      if { [info exists keys(-pin_names)] } {
+        set names $keys(-pin_names)
+        odb::add_names_constraint_direct $names $constraint_region
+      }
     } else {
       utl::warn PPL 73 "Constraint with region $region has an invalid edge."
     }
@@ -1072,6 +1104,20 @@ proc add_names_constraint { names edge begin end } {
   set constraint_region [$block findConstraintRegion $edge $begin $end]
 
   $block addBTermsToConstraint $pin_list $constraint_region
+}
+
+proc add_names_constraint_direct { names constraint_region } {
+  set block [get_block]
+
+  set pin_list [ppl::parse_pin_names "set_io_pin_constraint" $names]
+  $block addBTermsToConstraint $pin_list $constraint_region
+}
+
+proc add_direction_constraint_direct { direction constraint_region } {
+  set block [get_block]
+
+  # Use the existing C++ function that handles direction-based constraints
+  $block addBTermConstraintByDirection $direction $constraint_region
 }
 
 proc add_pins_to_top_layer { names llx lly urx ury } {
